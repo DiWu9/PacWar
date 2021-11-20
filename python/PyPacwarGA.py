@@ -16,12 +16,21 @@ class GeneticAlgorithm:
         self.functions = [self.U, self.V, self.W, self.X, self.Y, self.Z]
         self.mutationRate = 0.02
         self.candidateSize = 10
-        self.populationSize = 80
+        self.populationSize = 100
         self.bestLocalGene = None
         self.bestGene = None
         self.bestScore = 0
         self.allOnes = [1] * self.populationSize
         self.allThrees = [3] * self.populationSize
+        self.bestKiller = [0, 3, 1, 0, 0, 3, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 3, 3, 0, 0, 3, 1, 1, 1, 2, 1, 1, 2, 1, 1,
+                           2, 1, 1, 2, 1, 1, 2, 1, 1, 3, 1, 1, 3, 1, 1, 3, 1, 1, 3, 1]
+
+    def reset(self):
+        self.population = []
+        self.candidates = []
+        self.bestLocalGene = None
+        self.bestGene = None
+        self.bestScore = 0
 
     def setUpCandidates(self):
         """
@@ -40,6 +49,18 @@ class GeneticAlgorithm:
             self.population.append(randomGene)
         self.population.append(self.allOnes)
         self.population.append(self.allThrees)
+
+    def setPopulation(self, genes):
+        self.population = genes[:self.populationSize-3]
+        self.population.append(self.bestKiller)
+        self.population.append(self.allOnes)
+        self.population.append(self.allThrees)
+
+    def setCandidates(self, genes):
+        self.candidates = genes[len(genes)-self.candidateSize+3:]
+        self.candidates.append(self.bestKiller)
+        self.candidates.append(self.allOnes)
+        self.candidates.append(self.allThrees)
 
     def fitness(self, gene):
         """
@@ -67,7 +88,7 @@ class GeneticAlgorithm:
 
         self.bestLocalGene = localBestGene
         if localBestScore > self.bestScore:
-            print("New Highest Score: {}!", localBestScore)
+            # print("New Highest Score: {}!".format(localBestScore))
             self.bestScore = localBestScore
             self.bestGene = localBestGene
 
@@ -104,12 +125,12 @@ class GeneticAlgorithm:
 
     def crossover(self, i1, i2):
         """
-        do a one point crossover for each general function
+        do a one point crossover for each function
         i1, i2: index of gene in population
         """
         res1 = []
         res2 = []
-        cpts = [random.randint(function[0], function[1]) for function in self.functions] # crossover points
+        cpts = [random.randint(function[0], function[1]) for function in self.functions]  # crossover points
         gene1 = self.population[i1]
         gene2 = self.population[i2]
         for i in range(len(self.functions)):
@@ -127,24 +148,87 @@ class GeneticAlgorithm:
                     gene[i] = random.randint(0, 3)
 
     def isConverged(self, score):
+        """
+        converge when average population score difference <= 0.1 twice
+        """
         if score[0] is None or score[1] is None or score[2] is None:
             return False
         return abs(score[0]-score[1]) <= 0.01 and abs(score[1]-score[2]) <= 0.01
 
+    def toString(self, gene):
+        s = ""
+        for num in gene:
+            s += str(num)
+        return s
+
+    def getBetterCandidates(self, n):
+        """
+        use random candidate pool to find n better candidates
+        """
+        better_candidates = []
+        for x in range(n):
+            self.reset()
+            self.setUpCandidates()
+            self.setUpPopulation()
+            scores = [None, None, None]  # population average in the last three rounds
+            currRound = 1
+            while True:
+                # selection
+                score, localBestScore = self.selection()
+                avgScore = score / self.populationSize
+
+                # print status
+                """
+                print("Iteration {}: ".format(currRound))
+                print("Local Best Score: {}.".format(localBestScore))
+                print("Local Best Gene: {}.".format(self.bestLocalGene))
+                print("Global Best Score: {}.".format(self.bestScore))
+                print("Current Best Gene: {}.".format(self.bestGene))
+                print("Avg score: {}.".format(avgScore))
+                print("Latest scores: {}.".format(scores))
+                print("\n")
+                """
+
+                # convergence check
+                if self.isConverged(scores):
+                    print("Found {}th better gene for the pool.".format(x+1))
+                    print("String: {}.".format(self.toString(self.bestGene)))
+                    better_candidates.append(self.bestGene)
+                    # print("Population: {}.".format(self.population))
+                    break
+
+                # crossover
+                for i in range(0, len(self.population), 2):
+                    self.crossover(i, i + 1)
+
+                # mutation
+                self.mutation()
+
+                scores[2] = scores[1]
+                scores[1] = scores[0]
+                scores[0] = avgScore
+                currRound += 1
+
+        better_candidates.append(self.allOnes)
+        better_candidates.append(self.allThrees)
+        return better_candidates
+
     def run(self):
-        self.setUpCandidates()
-        self.setUpPopulation()
-        scores = [None, None, None]
+        """
+        self.population = self.getBetterCandidates(self.populationSize)  # takes lot of time to find 80 better gene
+        but the random population will make the total score to be 0
+        """
+        genes = readGene("genes.txt")
+        self.reset()
+        self.setPopulation(genes)
+        self.setCandidates(genes)
+        print("Population size: {}.".format(len(self.population)))
+        print("Candidate size: {}.".format(len(self.candidates)))
+        print("Starting to find best gene: ")
+
+        scores = [None, None, None]  # population average score in the last three rounds
         currRound = 1
         while True:
-            # modify competition pool
-            """
-            if currRound % 20 == 0:
-                print("Round {}".format(currRound))
-                i = random.randint(0, self.candidateSize-3)
-                self.candidates[i] = self.population[random.randint(0, self.populationSize)]
-                print("Set {}th to a gene in current population.".format(i))
-            """
             # selection
             score, localBestScore = self.selection()
             avgScore = score / self.populationSize
@@ -154,7 +238,7 @@ class GeneticAlgorithm:
             print("Local Best Score: {}.".format(localBestScore))
             print("Local Best Gene: {}.".format(self.bestLocalGene))
             print("Global Best Score: {}.".format(self.bestScore))
-            print("Current Best Gene: {}.".format(self.bestGene))
+            print("Global Best Gene: {}.".format(self.bestGene))
             print("Avg score: {}.".format(avgScore))
             print("\n")
 
@@ -180,11 +264,32 @@ class GeneticAlgorithm:
             currRound += 1
 
 
+def readGene(filename):
+    genes = []
+    file = open(filename, 'r')
+    lines = file.readlines()
+    for line in lines:
+        # print(line)
+        if line.startswith("String:"):
+            gene = line.split(" ")[1]
+            gene = gene[0:len(gene)-2]
+            gene_list = []
+            for x in gene:
+                gene_list.append(ord(x)-ord('0'))
+            genes.append(gene_list)
+    print("Loaded {} genes from {}.".format(len(genes), filename))
+    return genes
+
+
 def main():
     solver = GeneticAlgorithm()
+    # better_candidates = solver.getBetterCandidates(10)
+    # print(better_candidates)
     # list = []
     # solver.selection()
-    solver.run()
+    # solver.getBetterCandidates(20)
+    print(solver.toString([0, 3, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 3, 0, 3, 0, 3, 1, 1, 1, 2, 1, 1, 2, 1, 1, 1, 1, 1, 2, 1, 1, 2, 2, 1, 3, 0, 1, 3, 1, 0, 3, 1, 1, 3, 0]))
+    # solver.run()
 
 
 if __name__ == '__main__':
